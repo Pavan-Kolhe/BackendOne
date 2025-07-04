@@ -1,0 +1,16 @@
+{
+  "name": "paonebackend",
+  "version": "1.0.0",
+  "description": "yt backend series hitesh sir with pavan",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "paOne",
+    "javascript",
+    "backend"
+  ],
+  "author": "Pavan Kolhe",
+  "license": "ISC"
+}
