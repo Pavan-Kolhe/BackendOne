@@ -1,4 +1,4 @@
-import multer from "multer";
+import multer from "multer";                //Multer processes file uploads from the client, stores them on your server, and makes file info available in your route handlers. 
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
