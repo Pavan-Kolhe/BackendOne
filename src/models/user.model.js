@@ -13,7 +13,7 @@ const UserSchema = new Schema(
       index: true, // field ko searchable banana hai optimised tarike se (expensive ) so use needed most only
     },
     email: {
-      type: String,
+      ttype: String,
       required: true,
       unique: true,
       lowercase: true,
