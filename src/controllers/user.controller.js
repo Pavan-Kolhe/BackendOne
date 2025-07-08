@@ -226,7 +226,7 @@ const refreshAccessToken = asyncHandler(async (req,res)=>{
   // steps ->
   // get incomming refreshToken and check it
   // compare it with db refreshToken if not eqaul then relogin
-  // if equal provide new accessToken
+  // if equal provide new accessToken and new refreshTokn also for security
 
   const incommingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
 
@@ -256,8 +256,8 @@ const refreshAccessToken = asyncHandler(async (req,res)=>{
       }
     
       const {accessToken,newRefreshToken} =await generateAccessAndRefreshToken(user._id);
-      // doubt -> why we are genearting both we should new generate access token only
-    
+      // doubt -> why we are genearting both we should new generate access token only user will be logged in forever 
+      //  yes user will be loggeed in forever but it provides security to token theft and for erloginn we can set a hard limit session of 30 days to fire relogin
       return res
         .status(200)
         .cookie("accessToken", accessToken, options)
