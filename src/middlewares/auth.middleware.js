@@ -20,6 +20,7 @@ export const verifyJWT = asyncHandler (async(req, _ ,next)=>{    //  res use nah
   //Mobile apps and many frontend frameworks (like React Native, Flutter, Postman, etc.) often send the JWT as a Bearer token in the header:
   //Authorization: Bearer <accessToken>
 
+
     try {
         const token =
         req.cookies?.accessToken ||

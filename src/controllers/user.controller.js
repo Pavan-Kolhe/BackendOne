@@ -139,8 +139,7 @@ const loginUser = asyncHandler(async (req,res)=>{
   // send tokens by seucre cookies
   //  res -> succesful login
 
-  const {username,password,email} = req.body;
-
+  const {email,username,password} = req.body;
   if (!username && !email) {
     throw new ApiError(400, "username or email is required for login");
   }
@@ -197,7 +196,7 @@ const logoutUser = asyncHandler( async (req,res)=>{
       req.user._id,
       {
           $set: {        // set -> mongoDB ka operator
-              refreshToken : undefined
+            refreshToken : undefined      // $set: { field: undefined }	MongoDB ignores the update $set: { field: "" }	Field exists with an empty string value
           }               
       },
       {
