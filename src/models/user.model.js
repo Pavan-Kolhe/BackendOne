@@ -1,5 +1,5 @@
 import mongoose, { Schema } from "mongoose";
-import jwt from "jspnwebtoken";
+import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 
 const UserSchema = new Schema(
@@ -13,7 +13,7 @@ const UserSchema = new Schema(
       index: true, // field ko searchable banana hai optimised tarike se (expensive ) so use needed most only
     },
     email: {
-      ttype: String,
+      type: String,
       required: true,
       unique: true,
       lowercase: true,
@@ -61,6 +61,8 @@ UserSchema.methods.isCorrectPassword = async function (password) {
   // custom method
   return await bcrypt.compare(password, this.password);
 };
+
+//The jwt.sign(payload, secret, options like expiry) retuen a string
 
 UserSchema.methods.generateAccessToken = function () {
   return jwt.sign(

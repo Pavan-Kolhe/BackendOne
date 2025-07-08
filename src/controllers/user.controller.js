@@ -5,6 +5,21 @@ import {User} from "../models/user.model.js"
 import {uploadOnCloudinary} from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/Apiresponse.js";
 
+const generateAccessAndRefreshToken = async (userId)=>{
+    try {
+      const user = await User.findById(userId);
+      const accessToken = user.generateAccessToken();
+      const refreshToken = user.generateRefreshToken();
+
+      user.refreshToken = refreshToken;
+      await user.save({ validateBeforeSave: false }); // db me bhi to save karo but skip validation (do not run Mongoose schema validators like required, unique, etc.) before saving
+        
+      return {accessToken,refreshToken};
+    } catch (error) {
+        throw new ApiError(500,"Something went wrong while generating access and refresh token")
+    }
+}
+
 const registerUser = asyncHandler(async (req,res)=>{
   // get user details from frontend (user.model) dekho konsi feilds aani hai
   // validation of fields - notEmpty
@@ -28,23 +43,59 @@ const registerUser = asyncHandler(async (req,res)=>{
     throw new ApiError(400, "All fields are necessary");
   }
 
-  const existedUser = User.findOne({
+  const existedUser = await User.findOne({
     $or: [{ username }, { email }],                    // is email/username ka pehla user retrun karega DB se
   });                                                  // checking for unique user
 
   if (existedUser) {
     throw new ApiError(409, "user already exist with same username or email");
   }
-  // ?. prevents runtime errors when accessing properties that might not exist.
+  //req.files will look like:
+  /*{
+    avatar: [
+      {
+        fieldname: 'avatar',
+        originalname: 'profile.jpg',
+        encoding: '7bit',
+        mimetype: 'image/jpeg',
+        destination: './public/temp',
+        filename: 'profile.jpg',
+        path: 'public/temp/profile.jpg',
+        size: 12345
+      }
+    ],
+    coverImage: [
+      {
+        fieldname: 'coverImage',
+        originalname: 'cover.jpg',
+        encoding: '7bit',
+        mimetype: 'image/jpeg',
+        destination: './public/temp',
+        filename: 'cover.jpg',
+        path: 'public/temp/cover.jpg',
+        size: 23456
+      }
+    ]
+  }*/
+  
+    // ?. prevents runtime errors when accessing properties that might not exist.
   const avatarLocalPath = req.files?.avatar[0]?.path;                    // abhi server pe hi hai
-  const coverImageLocalPath = req.files?.coverImage[0]?.path;               // abhi server pe hi hai
+ // const coverImageLocalPath = req.files?.coverImage[0]?.path;               // abhi server pe hi hai
+
+ let coverImageLocalPath;
+ if(req.files && Array.isArray(req.files.coverImage)
+        && req.files.coverImage.length > 0){
+            coverImageLocalPath = req.files.coverImage[0].path;
+    }
+
+
 
   if(!avatarLocalPath){
     throw new ApiError(400,"avatar file is required")                      // checking avatar as a req field
   }
 
   const avatar = await uploadOnCloudinary(avatarLocalPath);             // returned is response
-  console.log(avatar);  
+  //console.log(avatar);  
   const coverImage = await uploadOnCloudinary(coverImageLocalPath)
 
   if(!avatar){
@@ -62,7 +113,7 @@ const registerUser = asyncHandler(async (req,res)=>{
     }
   );
 
-  const createdUser = User.findById(user._id).select
+  const createdUser =await User.findById(user._id).select
             ("-password -refreshToken");          // jo jo nahi chaiye - lagake model me ka field ka name likhdo
 
   if(!createdUser){
@@ -79,4 +130,94 @@ const registerUser = asyncHandler(async (req,res)=>{
 })
 
 
-export {registerUser}
+const loginUser = asyncHandler(async (req,res)=>{
+  // req body -> ham data lenge
+  // login by username or email
+  // find the user in db by(username or email) if not found then incorrect
+  // if found then check password match
+  // generate access and refresh token
+  // send tokens by seucre cookies
+  //  res -> succesful login
+
+  const {username,password,email} = req.body;
+
+  if (!username && !email) {
+    throw new ApiError(400, "username or email is required for login");
+  }
+
+  const user = await User.findOne({
+    $or: [{ username }, { email }], // is email or username ka pehla user retrun karega DB se
+  });
+
+  if (!user) {
+    throw new ApiError(404, "user does not exists");
+  }
+
+  const isPasswordValid = await user.isCorrectPassword(password); // matching password === this.password usring bycrypt
+
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Invalid user credentials"); // wrong password
+  }
+
+  const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+    user._id
+  );
+
+  // expensive op but  ensures security, up-to-date data,
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"); // This works (on a query):  await User.findById(user._id).select("-password -refreshToken"); This does NOT work (on a document):user.select("-password -refreshToken"); // ❌ Not a function on documents
+
+    const options = {
+        httpOnly : true,
+        secure : true
+    }
+
+    res
+    .status(200)
+    .cookie("accessToken",accessToken,options)
+    .cookie("refreshToken",refreshToken,options)
+    .json(
+        new ApiResponse(
+            200,
+            {
+            user: loggedInUser,accessToken,refreshToken
+            },
+            "User logged In Successfully"
+        )
+    )
+
+})
+
+const logoutUser = asyncHandler( async (req,res)=>{
+    // for user._id we will make a middleware
+    // clear cookies (tokens)
+    // reset refresh token in db also
+
+    await User.findByIdAndUpdate(
+      req.user._id,
+      {
+          $set: {        // set -> mongoDB ka operator
+              refreshToken : undefined
+          }               
+      },
+      {
+          new: true   // it ensures you get the updated document from the database after the update operation.
+      }
+    )
+
+    const options = {
+      httpOnly: true,
+      secure: true,
+    };
+
+    return res
+    .status(200)
+    .clearCookie("accessToken",options)
+    .clearCookie("refreshToken",options)
+    .json(new ApiResponse(200,{},"user logged Out"))
+
+})
+
+
+
+export {registerUser,loginUser,logoutUser}
