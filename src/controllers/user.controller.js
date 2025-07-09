@@ -26,7 +26,7 @@ const generateAccessAndRefreshToken = async (userId) => {
     );
   }
 };
-const deleteOldImage  = async  (publicId)=> {
+const deleteOldImage  = async  (publicId)=> {  // public url
   try {
     const result = await cloudinary.uploader.destroy(publicId);
     console.log("Deleted:", result);
@@ -40,7 +40,7 @@ const deleteOldImage  = async  (publicId)=> {
 const registerUser = asyncHandler(async (req, res) => {
   // get user details from frontend (user.model) dekho konsi feilds aani hai
   // validation of fields - notEmpty
-  // check if usr already exists : username , email
+  // check if user already exists : username , email
   // check for images , check for avatar
   // upload them to cloudinary , avatar
   // create user object - create entry in db
@@ -450,7 +450,7 @@ const getUserChannelProfile = asyncHandler(async (req,res)=>{
         $lookup: {
           from: "subscriptions",
           localField: "_id", // _id comes from the filtered user via $match
-          foreignField: "subscriber",
+          foreignField: "subscriber",   // from vale k model ki feild dalegi
           as: "subscribedTo", // channelsSubscribedbyme
         },
       },
