@@ -5,6 +5,7 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/Apiresponse.js";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 const generateAccessAndRefreshToken = async (userId) => {
   //Access Token - Short lived, not stored in db
@@ -214,10 +215,14 @@ const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
-      $set: {
-        // set -> mongoDB ka operator
-        refreshToken: undefined, // $set: { field: undefined }	MongoDB ignores the update $set: { field: "" }	Field exists with an empty string value
-      },
+        $unset:{
+          refreshToken :1   // this removes the field from db
+        }
+
+      // $set: {
+      //   // set -> mongoDB ka operator
+      //   refreshToken: undefined, // $set: { field: undefined }	MongoDB ignores the update $set: { field: "" }	Field exists with an empty string value
+      // },
     },
     {
       new: true, // it ensures you get the updated document from the database after the update operation.
@@ -271,20 +276,20 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       secure: true,
     };
 
-    const { accessToken, newRefreshToken } =
+    const { accessToken, refreshToken } =
       await generateAccessAndRefreshToken(user._id);
     // doubt -> why we are genearting both we should new generate access token only user will be logged in forever
     //  yes user will be loggeed in forever but it provides security to token theft and for erloginn we can set a hard limit session of 30 days to fire relogin
     return res
       .status(200)
       .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", newRefreshToken, options)
+      .cookie("refreshToken", refreshToken, options)
       .json(
         new ApiResponse(
           200,
           {
             accessToken,
-            refreshToken: newRefreshToken,
+            refreshToken: refreshToken,
           },
           "Access tkoen refreshed"
         )
@@ -298,9 +303,9 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
   // user is already logged in  ->  verifyjwt
   const { oldPassword, newPassword } = req.body;
 
-  const user = User.findById(req.user._id);
+  const user = await User.findById(req.user._id);
 
-  const isPasswordCorrect = user.isCorrectPassword(oldPassword);
+  const isPasswordCorrect = await user.isCorrectPassword(oldPassword);
 
   if (!isPasswordCorrect) {
     throw new ApiError(400, "Incorrect old password entered");
@@ -461,7 +466,7 @@ const getUserChannelProfile = asyncHandler(async (req,res)=>{
             $size: "$subscribers",
           },
           channelSubscribedToCount: {
-            $size: "subscribedTo",
+            $size: "$subscribedTo",
           },
           isSubscribed: {
             $cond: {
@@ -507,45 +512,48 @@ const getUserChannelProfile = asyncHandler(async (req,res)=>{
 const getWatchHistory = asyncHandler(async (req,res)=>{
     const user = await User.aggregate([
       {
-          $match :{
-            _id : new mongoose.Types.ObjectId(req.user._id)
-          }
+        $match: {
+          _id: new mongoose.Types.ObjectId(req.user._id),
+        },
       },
-      { 
-        $lookup:{                       //         🔍 Quick Mental Formula:
-          from:"videos",                // "Mujhe kis collection ka data join karna hai?"  → uska _id = localField
-          localField:watchHistory,                  // "Woh _id dusri collection mein kis field mein store hai?"  → us field ka naam = foreignField
-          foreignField:_id,
-          as:"watchHistory" ,
-          pipeline :[                 // nested lookup
+      {
+        $lookup: {
+          //         🔍 Quick Mental Formula:
+          from: "videos", // "Mujhe kis collection ka data join karna hai?"  → uska _id = localField
+          localField: "watchHistory", // "Woh _id dusri collection mein kis field mein store hai?"  → us field ka naam = foreignField
+          foreignField: "_id",
+          as: "watchHistory",
+          pipeline: [
+            // nested lookup
             {
-                $lookup:{
-                    from:"users",
-                    localField:owner,
-                    foreignField:_id,
-                    as:"owner",
-                    pipeline:[
-                        {
-                            $project:{
-                                fullName:1,
-                                username:1,
-                                avatar:1
-                            }
-                        }
-                    ]
-                }
+              $lookup: {
+                from: "users",
+                localField: "owner",
+                foreignField: "_id",
+                as: "owner",
+                pipeline: [
+                  {
+                    $project: {
+                      fullName: 1,
+                      username: 1,
+                      avatar: 1,
+                    },
+                  },
+                ],
+              },
             },
             {
-                $addFields:{              // isko laganese data == owner ho gaya nahito vo tha owner[0]
-                    owner :{
-                        $first: "$owner"
-                    }
-                }
-            }
-          ]
-        }
+              $addFields: {
+                // isko laganese data == owner ho gaya nahito vo tha owner[0]
+                owner: {
+                  $first: "$owner",
+                },
+              },
+            },
+          ],
+        },
       },
-    ])
+    ]);
 
     return res
     .status(200)
