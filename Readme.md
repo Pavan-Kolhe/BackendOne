@@ -3,4 +3,4 @@
 ## License
 
 This project is licensed under [ChaiAurCode](https://www.youtube.com/@chaiaurcode)
-and Project Assignment of controllers is done Pavan Kolhe (myself).
+and Project Assignment of controllers is done by Pavan Kolhe (myself).
