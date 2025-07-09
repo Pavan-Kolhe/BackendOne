@@ -26,6 +26,16 @@ const generateAccessAndRefreshToken = async (userId) => {
     );
   }
 };
+const deleteOldImage  = async  (publicId)=> {
+  try {
+    const result = await cloudinary.uploader.destroy(publicId);
+    console.log("Deleted:", result);
+    return result;
+  } catch (error) {
+    console.error("Cloudinary deletion failed:", error);
+    throw error;
+  }
+}
 
 const registerUser = asyncHandler(async (req, res) => {
   // get user details from frontend (user.model) dekho konsi feilds aani hai
@@ -320,7 +330,7 @@ const updateAccountDetails = asyncHandler (async (req,res)=>{
   }
   
   const user = await User.findByIdAndUpdate(
-    req.user._id,
+    req.user?._id,
     {
       $set:{
         fullName,       //es6 syntax
@@ -348,11 +358,15 @@ const updateUserAvatar = asyncHandler(async (req,res)=>{
 
     const avatar = await uploadOnCloudinary(avatarLocalPath);
 
-    if(!avatar.url){
+    if(!avatar.url){ 
       throw new ApiError(500 ,"Error while uploading avatar on cloudinary");
     }
 
-    const user  = User.findByIdAndUpdate(
+    const oldUser = await User.findById(req.user._id);
+     
+    const oldAvatarToBeDeleted = oldUser.avatar;
+
+    const user  =await User.findByIdAndUpdate(
           req.user._id,
           {
             $set :{
@@ -363,6 +377,8 @@ const updateUserAvatar = asyncHandler(async (req,res)=>{
             new :true
           }
     ).select("-password")
+
+    deleteOldImage(oldAvatarToBeDeleted);
 
     return res
       .status(200)
@@ -383,8 +399,11 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
   if (!coverImage.url) {
     throw new ApiError(500, "Error while uploading CoverImage on cloudinary");
   }
+  const oldUser = await User.findById(req.user._id);
 
-  const user = User.findByIdAndUpdate(
+  const oldCoverImageToBeDeleted = oldUser.coverImage;
+
+  const user =await User.findByIdAndUpdate(
     req.user._id,
     {
       $set: {
@@ -396,6 +415,8 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     }
   ).select("-password");
 
+  deleteOldImage(oldCoverImageToBeDeleted);
+
   return res
   .status(200)
   .json(
@@ -403,6 +424,89 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
   )
 
 });
+
+const getUserChannelProfile = asyncHandler(async (req,res)=>{
+    const {username} = req.params
+
+    if(!username?.trim()){
+      throw new ApiError(400,"username is missing");
+    }
+
+    const channel = await User.aggregate([
+      {
+        $match: {
+          username: username?.toLowerCase(),
+        },
+      },
+      {
+        $lookup: {
+          from: "subscriptions", // Subscription schema
+          localField: "_id", // _id comes from the filtered user via $match
+          foreignField: "channel", // currentDocument[localField] === foreignCollectionDocument[foreignField] || If match found → join that document into result.
+          as: "subscribers",
+        },
+      },
+      {
+        $lookup: {
+          from: "subscriptions",
+          localField: "_id", // _id comes from the filtered user via $match
+          foreignField: "subscriber",
+          as: "subscribedTo", // channelsSubscribedbyme
+        },
+      },
+      {
+        $addFields: {
+          //  add fields to User
+          subscribersCount: {
+            $size: "$subscribers",
+          },
+          channelSubscribedToCount: {
+            $size: "subscribedTo",
+          },
+          isSubscribed: {
+            $cond: {
+              if: { $in: [req.user._id, "$subscribers.subscriber"] }, // $in  -> return 1st is present in 2nd ?
+              then: true,
+              else: false,
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          fullName: 1, // selected
+          username: 1,
+          subscribersCount: 1,
+          channelSubscribedToCount: 1,
+          isSubscribed: 1,
+          avatar: 1,
+          coverImage: 1,
+          email: 1,
+        },
+      },
+    ]);
+    // notes::  $match – Username se ek specific user filter hota hai (case-insensitive).
+    // $lookup (subscribers) – Jo log is user ko subscribe kiye hain, wo sab join hote hain (Subscription.channel === User._id).
+    // $lookup (subscribedTo) – User ne kis-kis ko subscribe kiya hai, wo join hota hai (Subscription.subscriber === User._id).
+    // $addFields – Subscriber count, subscribed-to count, aur isSubscribed (logged-in user ne subscribe kiya kya?) calculate hota hai.
+    // $project – Final output ke liye sirf required fields select kiye jaate hain.
+    console.log(channel);
+
+    if(!channel?.length){
+      throw new ApiError(404,"channel does not exists")
+    }
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200,channel[0],"User channel fetched succesfully")
+    )
+
+})
+
+const getWatchHistory = asyncHandler(async (req,res)=>{
+    
+})
 
 export {
   registerUser,
@@ -413,5 +517,7 @@ export {
   getCurrentUser,
   updateAccountDetails,
   updateUserAvatar,
-  updateUserCoverImage
+  updateUserCoverImage,
+  getUserChannelProfile,
+  getWatchHistory,
 };
