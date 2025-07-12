@@ -49,6 +49,8 @@ const UserSchema = new Schema(
   { timestamps: true }
 );
 
+// pre hook   ->  just before
+
 UserSchema.pre("save", async function (next) {
   //save karne se paehele callback execute karo
   if (!this.isModified("password")) return next();
@@ -57,6 +59,7 @@ UserSchema.pre("save", async function (next) {
   next();
 });
 
+//just like findById this is also method
 UserSchema.methods.isCorrectPassword = async function (password) {
   // custom method
   return await bcrypt.compare(password, this.password);
@@ -79,16 +82,17 @@ UserSchema.methods.generateAccessToken = function () {
   );
 };
 UserSchema.methods.generateRefreshToken = function () {
-    return jwt.sign(
-      {
-        _id: this._id,
-
-      },
-      process.env.REFRESH_TOKEN_SECRET,
-      {
-        expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
-      }
-    );
+  return jwt.sign(
+    {
+      _id: this._id,
+    },
+    process.env.REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
+    }
+  );
 };
 
 export const User = mongoose.model("User", UserSchema);
+
+// mongoose.model ->  a document/structure
