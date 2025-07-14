@@ -24,15 +24,18 @@ const createTweet = asyncHandler(async (req, res) => {
 
 const getUserTweets = asyncHandler(async (req, res) => {
   // TODO: get user tweets
-  const user = await User.findById(req.params);
+  const user = await User.findById(req.params.userId);
   if (!user) {
     throw new ApiError(404, "User not found");
   }
   const tweets = await Tweet.aggregate([
     {
       $match: {
-        owner: user._id,
+        owner: new mongoose.Types.ObjectId(user._id),
       },
+    },
+    {
+      $sort: { createdAt: -1 }, //descending order
     },
     {
       $project: {
@@ -47,9 +50,13 @@ const getUserTweets = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, tweets, "User tweets fetched successfully"));
 });
-
+//  why req.body is undefined
 const updateTweet = asyncHandler(async (req, res) => {
   //TODO: update tweet
+  console.log("checking updatetweet");
+  console.log("req.body", req.body);
+  console.log("req.params.tweetId", req.params.tweetId);
+  console.log("content", req.body?.content);
   const content = req.body.content;
   const tweet = await Tweet.findById(req.params.tweetId);
   if (!tweet) {
@@ -64,11 +71,10 @@ const updateTweet = asyncHandler(async (req, res) => {
 
 const deleteTweet = asyncHandler(async (req, res) => {
   //TODO: delete tweet
-  const tweet = await Tweet.findById(req.params.tweetId);
+  const tweet = await Tweet.findByIdAndDelete(req.params.tweetId);
   if (!tweet) {
     throw new ApiError(404, "Tweet not found");
   }
-  await tweet.remove();
   return res
     .status(200)
     .json(new ApiResponse(200, tweet, "Tweet deleted successfully"));
