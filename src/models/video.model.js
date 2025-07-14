@@ -20,7 +20,7 @@ const videoSchema = new Schema(
       required: true,
     },
     duration: {
-      type: Number, //cloudanry url
+      type: Number,
       required: true,
     },
     views: {

@@ -1,11 +1,12 @@
 import { application, json } from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { ApiError } from "../utils/apiError.js";
+import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
-import { ApiResponse } from "../utils/Apiresponse.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import { deleteOldFile } from "../utils/cloudinary.js";
 
 const generateAccessAndRefreshToken = async (userId) => {
   //Access Token - Short lived, not stored in db
@@ -27,16 +28,6 @@ const generateAccessAndRefreshToken = async (userId) => {
     );
   }
 };
-const deleteOldImage  = async  (publicId)=> {  // public url
-  try {
-    const result = await cloudinary.uploader.destroy(publicId);
-    console.log("Deleted:", result);
-    return result;
-  } catch (error) {
-    console.error("Cloudinary deletion failed:", error);
-    throw error;
-  }
-}
 
 const registerUser = asyncHandler(async (req, res) => {
   // get user details from frontend (user.model) dekho konsi feilds aani hai
@@ -116,36 +107,53 @@ const registerUser = asyncHandler(async (req, res) => {
   const avatar = await uploadOnCloudinary(avatarLocalPath); // returned is response
   //console.log(avatar);
   const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+  // both uploadOnCloudinary can be rapped up in ty catch
 
   if (!avatar) {
     throw new ApiError(400, "avatar file is required");
   }
 
-  const user = await User.create(
-    // db user stored
-    {
-      fullName,
-      avatar: avatar.url,
-      coverImage: coverImage?.url || "",
-      email,
-      password,
-      username: username.toLowerCase(),
+  try {
+    const user = await User.create(
+      // db user stored
+      {
+        fullName,
+        avatar: avatar.url,
+        coverImage: coverImage?.url || "",
+        email,
+        password,
+        username: username.toLowerCase(),
+      }
+    );
+
+    const createdUser = await User.findById(user._id).select(
+      "-password -refreshToken"
+    ); // jo jo nahi chaiye - lagake model me ka field ka name likhdo
+
+    if (!createdUser) {
+      throw new ApiError(
+        500,
+        "Something went wrong while registering the user"
+      );
     }
-  );
 
-  const createdUser = await User.findById(user._id).select(
-    "-password -refreshToken"
-  ); // jo jo nahi chaiye - lagake model me ka field ka name likhdo
+    //returnig a Apiresponse
 
-  if (!createdUser) {
-    throw new ApiError(500, "Something went wrong while registering the user");
+    return res
+      .status(201)
+      .json(new ApiResponse(200, createdUser, "User registered Successfully"));
+  } catch (error) {
+    if (avatar) {
+      await deleteOldFile(avatar.public_id);
+    }
+    if (coverImage) {
+      await deleteOldFile(coverImage.public_id);
+    }
+    throw new ApiError(
+      500,
+      "Something went wrong while registering the user and images were deleted"
+    );
   }
-
-  //returnig a Apiresponse
-
-  return res
-    .status(201)
-    .json(new ApiResponse(200, createdUser, "User registered Successfully"));
 });
 
 const loginUser = asyncHandler(async (req, res) => {
@@ -215,9 +223,9 @@ const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
-        $unset:{
-          refreshToken :1   // this removes the field from db
-        }
+      $unset: {
+        refreshToken: 1, // this removes the field from db
+      },
 
       // $set: {
       //   // set -> mongoDB ka operator
@@ -276,8 +284,10 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       secure: true,
     };
 
-    const { accessToken, refreshToken } =
-      await generateAccessAndRefreshToken(user._id);
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+      // this method also saves refreshToken in db as well
+      user._id
+    );
     // doubt -> why we are genearting both we should new generate access token only user will be logged in forever
     //  yes user will be loggeed in forever but it provides security to token theft and for erloginn we can set a hard limit session of 30 days to fire relogin
     return res
@@ -311,8 +321,8 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Incorrect old password entered");
   }
 
-  user.password = newPassword;
-  await user.save({ validateBeforeSave: false }); // pre "save" called and saved bcrypted message
+  user.password = newPassword; // update only
+  await user.save({ validateBeforeSave: false }); // pre "save" called and saved bcrypted message that will save that in db
 
   return res
     .status(200)
@@ -326,70 +336,68 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, req.user, "current user fetched successfully"));
 });
 
-const updateAccountDetails = asyncHandler (async (req,res)=>{
-   // file update eg profile pic to uska ulagse controller likhna  (pura user wapis se upadate karne ki jarurat nahi)
-  const {fullName , email} = req.body
+const updateAccountDetails = asyncHandler(async (req, res) => {
+  // file update eg profile pic to uska ulagse controller likhna  (pura user wapis se upadate karne ki jarurat nahi)
+  const { fullName, email } = req.body;
 
-  if(!fullName && !email){
-      throw new ApiError(400,"All fields are required")
+  if (!fullName && !email) {
+    throw new ApiError(400, "All fields are required");
   }
-  
+
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
-      $set:{
-        fullName,       //es6 syntax
-        email :email,    // normal syntax  both works same
-      }
+      $set: {
+        fullName, //es6 syntax
+        email: email, // normal syntax  both works same
+      },
     },
     {
-      new :true   // update hone ke baad ki info return hoti hai
+      new: true, // update hone ke baad ki info return hoti hai
     }
-  ).select("-password")
+  ).select("-password");
 
   return res
-  .status(200)
-  .json(new ApiResponse(200,user,"Account details updated successfully"));
+    .status(200)
+    .json(new ApiResponse(200, user, "Account details updated successfully"));
+});
 
-})
-
-const updateUserAvatar = asyncHandler(async (req,res)=>{
+const updateUserAvatar = asyncHandler(async (req, res) => {
   // multer and verifyJWT
-    const avatarLocalPath = req.file?.path;
+  const avatarLocalPath = req.file?.path;
 
-    if(!avatarLocalPath){
-      throw new ApiError("400","Avatar file is missing");
+  if (!avatarLocalPath) {
+    throw new ApiError("400", "Avatar file is missing");
+  }
+
+  const avatar = await uploadOnCloudinary(avatarLocalPath);
+
+  if (!avatar.url) {
+    throw new ApiError(500, "Error while uploading avatar on cloudinary");
+  }
+
+  const oldUser = await User.findById(req.user._id);
+
+  const oldAvatarToBeDeleted = oldUser.avatar;
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        avatar: avatar.url,
+      },
+    },
+    {
+      new: true,
     }
+  ).select("-password");
 
-    const avatar = await uploadOnCloudinary(avatarLocalPath);
+  await deleteOldFile(oldAvatarToBeDeleted);
 
-    if(!avatar.url){ 
-      throw new ApiError(500 ,"Error while uploading avatar on cloudinary");
-    }
-
-    const oldUser = await User.findById(req.user._id);
-     
-    const oldAvatarToBeDeleted = oldUser.avatar;
-
-    const user  =await User.findByIdAndUpdate(
-          req.user._id,
-          {
-            $set :{
-              avatar : avatar.url
-            }
-          },
-          {
-            new :true
-          }
-    ).select("-password")
-
-    deleteOldImage(oldAvatarToBeDeleted);
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, user, "Avatar Image update successfully"));
-
-})
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Avatar Image update successfully"));
+});
 
 const updateUserCoverImage = asyncHandler(async (req, res) => {
   // multer and verifyJWT
@@ -408,7 +416,7 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
 
   const oldCoverImageToBeDeleted = oldUser.coverImage;
 
-  const user =await User.findByIdAndUpdate(
+  const user = await User.findByIdAndUpdate(
     req.user._id,
     {
       $set: {
@@ -420,152 +428,145 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     }
   ).select("-password");
 
-  deleteOldImage(oldCoverImageToBeDeleted);
+  await deleteOldFile(oldCoverImageToBeDeleted);
 
   return res
-  .status(200)
-  .json(
-    new ApiResponse(200,user,"cover Image update successfully")
-  )
-
+    .status(200)
+    .json(new ApiResponse(200, user, "cover Image update successfully"));
 });
 
-const getUserChannelProfile = asyncHandler(async (req,res)=>{
-    const {username} = req.params
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+  const { username } = req.params;
 
-    if(!username?.trim()){
-      throw new ApiError(400,"username is missing");
-    }
+  if (!username?.trim()) {
+    throw new ApiError(400, "username is missing");
+  }
 
-    const channel = await User.aggregate([
-      {
-        $match: {
-          username: username?.toLowerCase(),
-        },
+  const channel = await User.aggregate([
+    {
+      $match: {
+        username: username?.toLowerCase(),
       },
-      {
-        $lookup: {
-          from: "subscriptions", // Subscription schema
-          localField: "_id", // _id comes from the filtered user via $match
-          foreignField: "channel", // currentDocument[localField] === foreignCollectionDocument[foreignField] || If match found → join that document into result.
-          as: "subscribers",
-        },
+    },
+    {
+      $lookup: {
+        from: "subscriptions", // Subscription schema
+        localField: "_id", // _id comes from the filtered user via $match
+        foreignField: "channel", // currentDocument[localField] === foreignCollectionDocument[foreignField] || If match found → join that document into result.
+        as: "subscribers",
       },
-      {
-        $lookup: {
-          from: "subscriptions",
-          localField: "_id", // _id comes from the filtered user via $match
-          foreignField: "subscriber",   // from vale k model ki feild dalegi
-          as: "subscribedTo", // channelsSubscribedbyme
-        },
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id", // _id comes from the filtered user via $match
+        foreignField: "subscriber", // from vale k model ki feild dalegi
+        as: "subscribedTo", // channelsSubscribedbyme
       },
-      {
-        $addFields: {
-          //  add fields to User
-          subscribersCount: {
-            $size: "$subscribers",
+    },
+    {
+      $addFields: {
+        //  add fields to User
+        subscribersCount: {
+          $size: "$subscribers",
+        },
+        channelSubscribedToCount: {
+          $size: "$subscribedTo",
+        },
+        isSubscribed: {
+          $cond: {
+            if: { $in: [req.user._id, "$subscribers.subscriber"] }, // $in  -> return 1st is present in 2nd ?
+            then: true,
+            else: false,
           },
-          channelSubscribedToCount: {
-            $size: "$subscribedTo",
-          },
-          isSubscribed: {
-            $cond: {
-              if: { $in: [req.user._id, "$subscribers.subscriber"] }, // $in  -> return 1st is present in 2nd ?
-              then: true,
-              else: false,
-            },
-          },
         },
       },
-      {
-        $project: {
-          fullName: 1, // selected
-          username: 1,
-          subscribersCount: 1,
-          channelSubscribedToCount: 1,
-          isSubscribed: 1,
-          avatar: 1,
-          coverImage: 1,
-          email: 1,
-        },
+    },
+    {
+      $project: {
+        fullName: 1, // selected
+        username: 1,
+        subscribersCount: 1,
+        channelSubscribedToCount: 1,
+        isSubscribed: 1,
+        avatar: 1,
+        coverImage: 1,
+        email: 1,
       },
-    ]);
-    // notes::  $match – Username se ek specific user filter hota hai (case-insensitive).
-    // $lookup (subscribers) – Jo log is user ko subscribe kiye hain, wo sab join hote hain (Subscription.channel === User._id).
-    // $lookup (subscribedTo) – User ne kis-kis ko subscribe kiya hai, wo join hota hai (Subscription.subscriber === User._id).
-    // $addFields – Subscriber count, subscribed-to count, aur isSubscribed (logged-in user ne subscribe kiya kya?) calculate hota hai.
-    // $project – Final output ke liye sirf required fields select kiye jaate hain.
-    console.log(channel);
+    },
+  ]);
+  // notes::  $match – Username se ek specific user filter hota hai (case-insensitive).
+  // $lookup (subscribers) – Jo log is user ko subscribe kiye hain, wo sab join hote hain (Subscription.channel === User._id).
+  // $lookup (subscribedTo) – User ne kis-kis ko subscribe kiya hai, wo join hota hai (Subscription.subscriber === User._id).
+  // $addFields – Subscriber count, subscribed-to count, aur isSubscribed (logged-in user ne subscribe kiya kya?) calculate hota hai.
+  // $project – Final output ke liye sirf required fields select kiye jaate hain.
+  console.log(channel);
 
-    if(!channel?.length){
-      throw new ApiError(404,"channel does not exists")
-    }
+  if (!channel?.length) {
+    throw new ApiError(404, "channel does not exists");
+  }
 
-    return res
+  return res
     .status(200)
-    .json(
-        new ApiResponse(200,channel[0],"User channel fetched succesfully")
-    )
+    .json(new ApiResponse(200, channel[0], "User channel fetched succesfully"));
+});
 
-})
-
-const getWatchHistory = asyncHandler(async (req,res)=>{
-    const user = await User.aggregate([
-      {
-        $match: {
-          _id: new mongoose.Types.ObjectId(req.user._id),
-        },
+const getWatchHistory = asyncHandler(async (req, res) => {
+  const user = await User.aggregate([
+    {
+      $match: {
+        _id: new mongoose.Types.ObjectId(req.user._id),
       },
-      {
-        $lookup: {
-          //         🔍 Quick Mental Formula:
-          from: "videos", // "Mujhe kis collection ka data join karna hai?"  → uska _id = localField
-          localField: "watchHistory", // "Woh _id dusri collection mein kis field mein store hai?"  → us field ka naam = foreignField
-          foreignField: "_id",
-          as: "watchHistory",
-          pipeline: [
-            // nested lookup
-            {
-              $lookup: {
-                from: "users",
-                localField: "owner",
-                foreignField: "_id",
-                as: "owner",
-                pipeline: [
-                  {
-                    $project: {
-                      fullName: 1,
-                      username: 1,
-                      avatar: 1,
-                    },
+    },
+    {
+      $lookup: {
+        //         🔍 Quick Mental Formula:
+        from: "videos", // "Mujhe kis collection ka data join karna hai?"  → uska _id = localField
+        localField: "watchHistory", // "Woh _id dusri collection mein kis field mein store hai?"  → us field ka naam = foreignField
+        foreignField: "_id",
+        as: "watchHistory",
+        pipeline: [
+          // nested lookup
+          {
+            $lookup: {
+              from: "users",
+              localField: "owner",
+              foreignField: "_id",
+              as: "owner",
+              pipeline: [
+                {
+                  $project: {
+                    fullName: 1,
+                    username: 1,
+                    avatar: 1,
                   },
-                ],
-              },
-            },
-            {
-              $addFields: {
-                // isko laganese data == owner ho gaya nahito vo tha owner[0]
-                owner: {
-                  $first: "$owner",
                 },
+              ],
+            },
+          },
+          {
+            $addFields: {
+              // isko laganese data == owner ho gaya nahito vo tha owner[0]
+              owner: {
+                $first: "$owner",
               },
             },
-          ],
-        },
+          },
+        ],
       },
-    ]);
+    },
+  ]);
 
-    return res
+  return res
     .status(200)
     .json(
-        new ApiResponse(
-            200,
-            user[0].watchHistory,
-            "watch History fetched successfully"
-        )
-    )
-})
-
+      new ApiResponse(
+        200,
+        user[0].watchHistory,
+        "watch History fetched successfully"
+      )
+    );
+});
 
 export {
   registerUser,
