@@ -12,14 +12,17 @@ const getAllVideos = asyncHandler(async (req, res) => {
 });
 
 const publishAVideo = asyncHandler(async (req, res) => {
+  console.log("req.body", req.body);
   const { title, discription } = req.body;
   // TODO: get video, upload to cloudinary, create video
+  console.log("req.files", req.files);
   const videoLocalPath = req.files?.videoFile[0]?.path;
   const thumbnailLocalPath = req.files?.thumbnail[0]?.path;
 
   const videoObj = await uploadOnCloudinary(videoLocalPath);
 
   const thumbnailObj = await uploadOnCloudinary(thumbnailLocalPath);
+  console.log("before creating video");
 
   try {
     const video = await Video.create({
