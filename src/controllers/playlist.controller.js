@@ -5,14 +5,14 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 const createPlaylist = asyncHandler(async (req, res) => {
-  const { name, description } = req.body;
+  const { name, discription } = req.body;
 
   //TODO: create playlist
 
   // no idea how videos array will come from frontend
   const playlist = await Playlist.create({
     name,
-    description,
+    discription,
     owner: req.user._id,
   });
   if (!playlist) {
@@ -51,9 +51,10 @@ const addVideoToPlaylist = asyncHandler(async (req, res) => {
   const { playlistId, videoId } = req.params;
   const updatedPl = await Playlist.findByIdAndUpdate(
     playlistId,
-    {
-      $push: { videos: videoId }, //$push: Adds the video ID to the videos array.
-    },
+    // {
+    //   $push: { videos: videoId }, //$push: Adds the video ID to the videos array.
+    // },
+    { $addToSet: { videos: videoId } }, // only pushes unique elements into the array
     {
       new: true,
     }
@@ -113,14 +114,14 @@ const deletePlaylist = asyncHandler(async (req, res) => {
 
 const updatePlaylist = asyncHandler(async (req, res) => {
   const { playlistId } = req.params;
-  const { name, description } = req.body;
+  const { name, discription } = req.body;
   //TODO: update playlist
   const playlist = await Playlist.findById(playlistId);
   if (!playlist) {
     throw new ApiError(404, "Playlist not found");
   }
   playlist.name = name;
-  playlist.description = description;
+  playlist.discription = discription;
   await playlist.save({ validationBeforeSave: false });
   return res
     .status(200)
