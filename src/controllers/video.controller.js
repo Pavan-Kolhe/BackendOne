@@ -7,8 +7,37 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { deleteOldFile, uploadOnCloudinary } from "../utils/cloudinary.js";
 
 const getAllVideos = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, query, sortBy, sortType, userId } = req.query;
+  const {
+    page = 1,
+    limit = 10,
+    query,
+    sortBy = "createdAt",
+    sortType = -1,
+    userId,
+  } = req.query;
   //TODO: get all videos based on query, sort, pagination
+
+  // SchemaModel.find(query)  =>  query is object |
+  // eg : query = { _video : videoId }
+
+  //userstanding regex notes are at the bottom
+
+  const filter = {
+    owner: userId,
+  };
+  if (query && query.trim() !== "") {
+    filter.title = { $regex: query, $options: "i" };
+  }
+  const videos = await Video.find(filter)
+    .sort({ [sortBy]: parseInt(sortType) })
+    .skip((parseInt(page) - 1) * parseInt(limit))
+    .limit(parseInt(limit));
+  if (!videos) {
+    throw new ApiError(404, "No videos found");
+  }
+  return res
+    .status(200)
+    .json(new ApiResponse(200, videos, "Videos found successfully"));
 });
 
 const publishAVideo = asyncHandler(async (req, res) => {
@@ -133,3 +162,62 @@ export {
   deleteVideo,
   togglePublishStatus,
 };
+
+//userstanding regex
+// MongoDB $regex — Important Notes
+// What is $regex?
+// $regex is used to perform pattern-based text searches in MongoDB.
+// Helps find partial matches, case-insensitive matches, etc.
+// Basic Syntax
+// Edit
+// { field: { $regex: "pattern", $options: "i" } }
+// field: The document field to search (e.g., title)
+
+// "pattern": Text or pattern to match
+
+// $options: "i": Makes the search case-insensitive
+
+// Common Use Cases and Patterns
+
+// Contains text:
+// { title: { $regex: "fun", $options: "i" } }
+// → Matches: "fun time", "Funny moments"
+
+// Exact match (case-insensitive):
+// { title: { $regex: "^fun$", $options: "i" } }
+// → Matches: only "fun"
+
+// Starts with:
+// { title: { $regex: "^fun", $options: "i" } }
+// → Matches: "Funny video", "fun time"
+
+// Ends with:
+// { title: { $regex: "fun$", $options: "i" } }
+// → Matches: "Let's have fun"
+
+// Contains a number:
+// { title: { $regex: "\\d" } }
+// → Matches: "Video 123", "Part 9"
+
+// Only letters (no digits or symbols):
+// { title: { $regex: "^[A-Za-z]+$", $options: "i" } }
+// → Matches: "HelloWorld"
+
+// Contains whole word:
+// { title: { $regex: "\\bfun\\b", $options: "i" } }
+// → Matches: "Have fun" (not "funny")
+
+// When to Use $regex
+
+// ✅ For partial text searches (search bars, filters)
+// ✅ When case-insensitive match is needed
+// ❌ Avoid for exact ID or performance-critical queries
+
+// Performance Tip
+// Regex starting with ^ can use indexes.
+// Regex without ^ may be slow on large collections.
+
+// Task	Use This
+// Simple search (small app)	MongoDB $regex or $text
+// Scalable, fast search	Elasticsearch / Meilisearch
+// Smart suggestions	ML + full-text + user behavior

@@ -81,6 +81,7 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
 // controller to return channel list to which user has subscribed
 const getSubscribedChannels = asyncHandler(async (req, res) => {
   const { subscriberId } = req.params;
+  console.log("Params received:", req.params);
 
   const subscribedChannels = await Subscription.aggregate([
     {
@@ -100,6 +101,7 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
       },
     },
   ]);
+
   if (subscribedChannels) {
     return res
       .status(200)
@@ -107,7 +109,7 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
         new ApiResponse(
           200,
           subscribedChannels,
-          "Subscribed channels found successfully"
+          ` Subscribed channels found successfully `
         )
       );
   }

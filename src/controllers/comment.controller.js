@@ -8,6 +8,24 @@ const getVideoComments = asyncHandler(async (req, res) => {
   //TODO: get all comments for a video
   const { videoId } = req.params;
   const { page = 1, limit = 10 } = req.query;
+  // .skip(20) → Tells the database to ignore the first 20 documents in the result set.
+  //.limit(10) → After skipping, it returns only the next 10 documents.
+
+  console.log("type of page", typeof page);
+  console.log("type of limit", typeof limit);
+
+  const comments = await Comment.find({ video: videoId })
+    .sort({ createdAt: -1 })
+    .skip((parseInt(page) - 1) * parseInt(limit)) // offset  = (page - 1) * limit
+    .limit(parseInt(limit));
+
+  if (!comments) {
+    throw new ApiError(500, "cannot get comments from server");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, comments, "Comments found successfully"));
 });
 
 const addComment = asyncHandler(async (req, res) => {
