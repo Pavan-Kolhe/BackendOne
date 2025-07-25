@@ -11,7 +11,7 @@ const getVideoComments = asyncHandler(async (req, res) => {
   // .skip(20) → Tells the database to ignore the first 20 documents in the result set.
   //.limit(10) → After skipping, it returns only the next 10 documents.
 
-  console.log("type of page", typeof page);
+  console.log("type of page", typeof page);   // number matlab parseInt karne ki jarurat nahi
   console.log("type of limit", typeof limit);
 
   const comments = await Comment.find({ video: videoId })
@@ -30,7 +30,7 @@ const getVideoComments = asyncHandler(async (req, res) => {
 
 const addComment = asyncHandler(async (req, res) => {
   // TODO: add a comment to a video
-  const videoId = req.params;
+  const { videoId } = req.params;
   const { content } = req.body;
 
   if (!content.trim()) {
